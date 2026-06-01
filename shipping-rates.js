@@ -18,7 +18,7 @@ class shippingRates extends HTMLElement {
     const template = document.createElement("template");
     template.innerHTML = `
 			<form action="https://usps-rates.netlify.app/api" part="form">
-      	<label for="to" part="label">Zip code (5-digit)</label>
+      	<label for="to" part="label">Postal code</label>
 				<input id="to" name="to" type="text" inputmode="numeric" pattern="^(?(^00000(|-0000))|(\d{5}(|-\d{4})))$" part="to">
 
 				<input type="hidden" name="from">
