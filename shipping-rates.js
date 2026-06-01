@@ -6,15 +6,27 @@ class shippingRates extends HTMLElement {
 	}
 
 	static observedAttributes = [
-		'data-to',
+		'data-from',
+		'data-length',
+		'data-width',
+		'data-height',
+		'data-weight',
+		'data-api',
 	];
 
   static #appendShadowTemplate = (node) => {
     const template = document.createElement("template");
     template.innerHTML = `
-			<form action="https://usps-rates.netify.app/api" part="form">
-      	<label for="zip" part="label">Zip code (5-digit)</label>
-				<input id="zip" type="text" pattern="[0-9]{5}" part="input"/>
+			<form action="https://usps-rates.netlify.app/api" part="form">
+      	<label for="to" part="label">Zip code (5-digit)</label>
+				<input id="to" name="to" type="text" inputmode="numeric" pattern="^(?(^00000(|-0000))|(\d{5}(|-\d{4})))$" part="to">
+
+				<input type="hidden" name="from">
+				<input type="hidden" name="length">
+				<input type="hidden" name="width">
+				<input type="hidden" name="height">
+				<input type="hidden" name="weight">
+
 				<button part="button">check rates</button>
 			</form>
     `;
@@ -40,53 +52,70 @@ class shippingRates extends HTMLElement {
 		if (newValue === oldValue) return;
 
 		switch (name) {
-			case 'data-to':
+			case 'data-api':
 				this.toZip = this.dataset.to;
 				break;
 		}
 	};
 
-	#zipField;
+	#form;
+	#toZipInput;
+	#fromZipInput;
+	#lengthInput;
+	#heightInput;
+	#widthInput;
+	#weightInput;
 
 	connectedCallback() {
-		this.#findZipField();
+		this.#toZipInput = this.shadowRoot.getElementById('to');
+		if (this.dataset.to) this.#toZipInput.value = this.dataset.to;
+		this.#watchToZipInput();
+
+		this.#form = this.shadowRoot.querySelector('[part=form]');
+		if (this.dataset.api) this.#form.setAttribute('action', this.dataset.api);
+
+		this.#fromZipInput = this.shadowRoot.querySelector('[name=from]');
+		if (this.dataset.from) this.#fromZipInput.value = this.dataset.from;
+
+		this.#lengthInput = this.shadowRoot.querySelector('[name=length]');
+		if (this.dataset.length) this.#lengthInput.value = this.dataset.length;
+
+		this.#widthInput = this.shadowRoot.querySelector('[name=width]');
+		if (this.dataset.width) this.#widthInput.value = this.dataset.width;
+
+		this.#heightInput = this.shadowRoot.querySelector('[name=height]');
+		if (this.dataset.height) this.#heightInput.value = this.dataset.height;
+
+		this.#weightInput = this.shadowRoot.querySelector('[name=weight]');
+		if (this.dataset.weight) this.#weightInput.value = this.dataset.weight;
 	}
 
 	disconnectedCallback() {
-		this.#unWatchZipField();
+		this.#unWatchToZipInput();
 	}
 
 	// get and set
-	get zipField () { return this.#zipField; }
+	get zipInput () { return this.#toZipInput; }
 
 	set toZip (value) {
-		if (!this.#zipField) return;
+		if (!this.#toZipInput) return;
 		if (this.dataset.to !== value) {
 			this.dataset.to = value || '';
 		}
-		if (this.#zipField.value !== value) {
-			this.#zipField.value = value || '';
+		if (this.#toZipInput.value !== value) {
+			this.#toZipInput.value = value || '';
 		}
 
 		return this.toZip;
 	}
 
 	get toZip () {
-		return this.#zipField?.value || this.dataset.toZip;
+		return this.#toZipInput?.value;
 	}
 
 	// private methods
-	#findZipField = () => {
-		if (this.#zipField) this.#unWatchZipField();
-
-		this.#zipField = this.shadowRoot.getElementById('zip');
-
-		this.toZip = this.toZip;
-		this.#watchZipField();
-	}
-
-	#zipFieldInput = () => {
-		this.toZip = this.#zipField.value;
+	#toZipInputInput = () => {
+		this.toZip = this.#toZipInput.value;
 	}
 
 	async #fetchData() {
@@ -101,12 +130,12 @@ class shippingRates extends HTMLElement {
 		this.featureData = await response.json();
 	}
 
-	#watchZipField = () => {
-		this.#zipField.addEventListener('change', this.#zipFieldInput);
+	#watchToZipInput = () => {
+		this.#toZipInput.addEventListener('change', this.#toZipInputInput);
 	}
 
-	#unWatchZipField = () => {
-		this.#zipField.removeEventListener('change', this.#zipFieldInput);
+	#unWatchToZipInput = () => {
+		this.#toZipInput.removeEventListener('change', this.#toZipInputInput);
 	}
 }
 

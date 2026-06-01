@@ -5,7 +5,7 @@
   "main": "shipping-rates.js",
   "type": "module",
   "scripts": {
-    "dev": "npx http-server ."
+    "serve": "npx http-server ."
   },
   "repository": {
     "type": "git",

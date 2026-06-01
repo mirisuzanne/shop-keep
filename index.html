@@ -96,9 +96,20 @@
 
     <hr>
 
-    <h2>General usage example</h2>
+    <h2>Just get city and state</h2>
 
-    <shipping-rates @data-from="80205"></shipping-rates>
+    <shipping-rates data-api="/api"></shipping-rates>
+
+    <h2>Get shipping rates</h2>
+
+    <shipping-rates
+      data-api="/api"
+      data-from="80205"
+      data-length="10"
+      data-height="10"
+      data-width="10"
+      data-weight="2.45"
+    ></shipping-rates>
 
     <hr>
 
