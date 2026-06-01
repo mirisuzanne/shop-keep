@@ -1,13 +1,13 @@
-# `component-name`
+# `shipping-rates`
 
 A Web Component for…
 
 ## Features
 
 
-**[Demo](https://mirisuzanne.github.io/component-name/index.html)**
+**[Demo](https://mirisuzanne.github.io/shipping-rates/index.html)**
 
-[![Open in StackBlitz][]](https://stackblitz.com/~/github.com/mirisuzanne/component-name?file=component-name.js&initialPath=/index.html)
+[![Open in StackBlitz][]](https://stackblitz.com/~/github.com/mirisuzanne/shipping-rates?file=shipping-rates.js&initialPath=/index.html)
 
 [Open in StackBlitz]: https://developer.stackblitz.com/img/open_in_stackblitz.svg
 
@@ -16,9 +16,9 @@ A Web Component for…
 General usage example:
 
 ```html
-<script type="module" src="component-name.js"></script>
+<script type="module" src="shipping-rates.js"></script>
 
-<component-name></component-name>
+<shipping-rates></shipping-rates>
 ```
 
 ## Installation
@@ -26,9 +26,9 @@ General usage example:
 You have a few options (choose one):
 
 1. Install via
-   [npm](https://www.npmjs.com/package/@terriblemia/component-name):
-   `npm install @terriblemia/component-name`
-2. [Download the source manually from GitHub](https://github.com/mirisuzanne/component-name/releases)
+   [npm](https://www.npmjs.com/package/@terriblemia/shipping-rates):
+   `npm install @terriblemia/shipping-rates`
+2. [Download the source manually from GitHub](https://github.com/mirisuzanne/shipping-rates/releases)
    into your project.
 3. Skip this step
    and use the script directly
@@ -42,14 +42,14 @@ Make sure you include the `<script>` in your project
 
 ```html
 <!-- Host yourself -->
-<script type="module" src="component-name.js"></script>
+<script type="module" src="shipping-rates.js"></script>
 ```
 
 ```html
 <!-- 3rd party CDN, not recommended for production use -->
 <script
   type="module"
-  src="https://www.unpkg.com/@terriblemia/component-name@0.1.0/component-name.js"
+  src="https://www.unpkg.com/@terriblemia/shipping-rates@0.1.0/shipping-rates.js"
 ></script>
 ```
 
@@ -57,14 +57,14 @@ Make sure you include the `<script>` in your project
 <!-- 3rd party CDN, not recommended for production use -->
 <script
   type="module"
-  src="https://esm.sh/@terriblemia/component-name@0.1.0"
+  src="https://esm.sh/@terriblemia/shipping-rates@0.1.0"
 ></script>
 ```
 
 Or use the built in
 [WebC](https://www.11ty.dev/docs/languages/webc/) component
 with [Eleventy](https://www.11ty.dev/docs/),
-by adding `"npm:@terriblemia/component-name/*.webc"`
+by adding `"npm:@terriblemia/shipping-rates/*.webc"`
 to the Eleventy WebC Plugin `components` registry:
 
 ```js
@@ -73,7 +73,7 @@ module.exports = function (eleventyConfig) {
   eleventyConfig.addPlugin(eleventyWebcPlugin, {
     components: [
       // Add as a global WebC component
-      "npm:@11ty/component-name/*.webc",
+      "npm:@11ty/shipping-rates/*.webc",
     ],
   });
 }
