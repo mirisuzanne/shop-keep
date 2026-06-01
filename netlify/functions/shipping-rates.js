@@ -57,7 +57,7 @@ const getRates = async (details = {}) => {
 	return await ratesResponse.json();
 }
 
-export async function handler (request, context) {
+export default async = (request, context) => {
 	try {
 		const query = new URLSearchParams(request.rawQuery);
 
@@ -75,4 +75,8 @@ export async function handler (request, context) {
 			body: JSON.stringify(e),
 		};
 	}
+}
+
+export const config = {
+  path: "/api",
 }

@@ -12,7 +12,7 @@ class shippingRates extends HTMLElement {
   static #appendShadowTemplate = (node) => {
     const template = document.createElement("template");
     template.innerHTML = `
-			<form action="/api/shipping-rates/" part="form">
+			<form action="https://usps-rates.netify.app/api" part="form">
       	<label for="zip" part="label">Zip code (5-digit)</label>
 				<input id="zip" type="text" pattern="[0-9]{5}" part="input"/>
 				<button part="button">check rates</button>
