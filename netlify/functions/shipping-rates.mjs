@@ -7,10 +7,6 @@ const apiOptions = {
 
 const api = apiOptions.test;
 
-var tomorrow = new Date();
-tomorrow.setDate(tomorrow.getDate() + 1);
-tomorrow = tomorrow.toISOString().slice(0,10);
-
 let authToken;
 
 const getAuth = async () => {
@@ -44,20 +40,51 @@ const cityStateFromZip = async (zip) => {
 	return await cityStateResponse.json();
 }
 
-const getRates = async (details = {}) => {
+const domesticRates = async (details = {}) => {
 	const auth = await getAuth();
 	const ratesResponse = await fetch(`https://${api}/prices/v3/base-rates/search`, {
 		method: 'post',
 		body: JSON.stringify({
-			originZIPCode: details.from || '80205',
+			originZIPCode: details.from,
 			destinationZIPCode: details.to,
 			weight: Number(details.weight),
 			length: Number(details.length),
 			width: Number(details.width),
 			height: Number(details.height),
-			mailingDate: tomorrow,
 			priceType: "COMMERCIAL",
 			mailClass: "USPS_GROUND_ADVANTAGE",
+			processingCategory: "MACHINABLE",
+			rateIndicator: "SP",
+			destinationEntryFacilityType: "NONE",
+		}),
+		headers: {
+			accept: 'Content-Type: application/json',
+			Authorization: `Bearer ${auth}`,
+			'Content-Type': 'application/json',
+		},
+	});
+
+	return await ratesResponse.json();
+}
+
+const globalRates = async (details = {}) => {
+	const mailClass = details.weight < 4
+		? 'FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE'
+		: 'PRIORITY_MAIL_INTERNATIONAL';
+
+	const auth = await getAuth();
+	const ratesResponse = await fetch(`https://${api}/international-prices/v3/base-rates/search`, {
+		method: 'post',
+		body: JSON.stringify({
+			originZIPCode: details.from,
+			foreignPostalCode: details.to,
+			destinationCountryCode: details.country,
+			weight: Number(details.weight),
+			length: Number(details.length),
+			width: Number(details.width),
+			height: Number(details.height),
+			priceType: "COMMERCIAL",
+			mailClass,
 			processingCategory: "MACHINABLE",
 			rateIndicator: "SP",
 			destinationEntryFacilityType: "NONE",
@@ -78,23 +105,29 @@ export default async (request, context) => {
 		const query = new URLSearchParams(url.search);
 
 		const details = {
-			from: query.get('from'),
+			from: query.get('from') || '80205',
 			to: query.get('to'),
 			weight: query.get('weight'),
 			length: query.get('length'),
 			width: query.get('width'),
 			height: query.get('height'),
+			country: query.get('country') || 'us',
 		}
 
 		if (!details.to) throw 'No destination zip code provided';
 
-		const reply = {
-			cityState: await cityStateFromZip(details.to),
-		};
+		if (!Object.values(details).every((value) => value)) {
+			const reply = await cityStateFromZip(details.to);
 
-		if (details.length && details.height && details.width && details.weight) {
-			reply.rates = await getRates(details);
+			return new Response(
+				JSON.stringify(reply),
+				{ status: 200, statusText: 'ok', }
+			);
 		}
+
+		const reply = details.country === 'US'
+			? await domesticRates(details)
+			: await globalRates(details);
 
 		return new Response(
 			JSON.stringify(reply),
@@ -112,4 +145,9 @@ export default async (request, context) => {
 
 export const config = {
   path: "/api",
+	rateLimit: {
+    windowLimit: 100,
+    windowSize: 60,
+    aggregateBy: ["ip", "domain"],
+  },
 }
