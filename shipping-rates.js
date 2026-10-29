@@ -1,26 +1,30 @@
-class shippingRates extends HTMLElement {
+class ShippingRates extends HTMLElement {
 	static register(tagName) {
 		if ("customElements" in window) {
-			customElements.define(tagName || "shipping-rates", shippingRates);
+			customElements.define(tagName || "shipping-rates", ShippingRates);
 		}
 	}
 
   static #appendShadowTemplate = (node) => {
     const template = document.createElement("template");
     template.innerHTML = `
-			<form action="https://usps-rates.netlify.app/api" part="form">
-				<form-field>${shippingRates.#zipInput}</form-field>
-				<form-field hidden global-field>
-					${shippingRates.#countrySelect}
-				</form-field>
+			<form action="/api/shipping" part="form">
+				<input type="hidden" id="from-zip" name="from-zip">
+				<input type="hidden" id="item-data" name="items">
 
-				<input type="hidden" name="from">
-				<input type="hidden" name="length">
-				<input type="hidden" name="width">
-				<input type="hidden" name="height">
-				<input type="hidden" name="weight">
+				<div part="public-fields">
+					<div part="to-zip form-field">
+						<label for="to-zip" part="label">Postal code</label>
+						<input id="to-zip" name="to-zip" type="text" inputmode="numeric" pattern="${ShippingRates.#usPostalPattern}" part="input postal-code" autocomplete="shipping postal-code">
+					</div>
+					<div part="to-country form-field" hidden>
+						${ShippingRates.#countrySelect}
+					</div>
+				</div>
 
-				<button part="button">check rates</button>
+				<button type="submit" part="button">
+					<slot>estimate shipping</slot>
+				</button>
 				<output part="result" hidden></output>
 			</form>
     `;
@@ -31,426 +35,558 @@ class shippingRates extends HTMLElement {
   static #adoptShadowStyles = (node) => {
     const shadowStyle = new CSSStyleSheet();
     shadowStyle.replaceSync(`
-			:host([data-status="fetching"]) button::after {
+			:host {
+				display: block;
+				container: shipping-rates / inline-size;
+			}
+
+			:host([data-status="fetching"]) button[type=submit]::after {
 				content: '…';
 			}
 
 			:host([data-status="error"]) {
-				--status-color: red;
+				--status-color: var(--shipping-error-color, red);
 			}
 
 			[hidden] { display: none !important; }
 
 			output {
 				display: block;
-				border: solid var(--status-color, currentColor);
-			}
-
-			form {
-				display: grid;
-				gap: 0.25lh;
-			}
-
-			form-field {
-				display: flex;
-				flex-flow: wrap;
-				gap: 1ch;
+				border-inline-start: thick solid var(--status-color, currentColor);
+				padding-inline-start: 1ch;
 			}
 
 			input, select, button {
 				font: inherit;
-				flex: 1;
+				padding: 0.25lh;
+				line-height: normal;
 			}
 
 			input:user-invalid:not(:focus) {
-				border-color: red;
+				border-color: var(--shipping-error-color, red);
 			}
 
-			input, select {
-				inline-size: 6ch;
+			[part~=form],
+			[part~=public-fields] {
+				display: grid;
+				gap: 0.5lh;
 			}
-    `);
+
+			[part~=form-field] {
+				display: grid;
+			}
+
+			[part~=button] {
+				place-self: start;
+			}
+		`);
     node.shadowRoot.adoptedStyleSheets = [shadowStyle];
   }
 
+  static shippingChange = new Event('shippingChange', {bubbles: true});
+  static addressChange = new Event('addressChange', {bubbles: true});
+
   constructor() {
     super();
-    shippingRates.#appendShadowTemplate(this);
-    shippingRates.#adoptShadowStyles(this);
+    ShippingRates.#appendShadowTemplate(this);
+    ShippingRates.#adoptShadowStyles(this);
   }
 
-	#form;
-	#formFields = {};
+	#shop;
+	#parts = {};
 	#uspsData;
-	#output;
-	price;
+	#estimate;
+
+	get estimate() {
+		return this.#estimate;
+	}
+
+	set estimate(value) {
+		this.#estimate = value ? Number(value) : value;
+		this.#onEstimateChange();
+	}
+
+	get api() {
+		return this.#parts.form.getAttribute('action');
+	}
+
+	set api(value) {
+		if (!value) return;
+		this.#parts.form.setAttribute('action', value);
+	}
+
+	get fromZip() {
+		return this.#parts.fromZip.value;
+	}
+
+	set fromZip(value) {
+		this.#parts.fromZip.value = value || '';
+	}
+
+	get address() {
+		const local = localStorage.getItem('shipping-address');
+		return JSON.parse(local) || null;
+	}
+
+	set address(value) {
+		if (typeof value !== 'object') throw 'Address must be an object';
+
+		let trimValue = Object.keys(value)
+			.filter((key) => value[key])
+			.reduce((all, key) => ({ ...all, [key]: value[key] }), {});
+
+		localStorage.setItem('shipping-address', JSON.stringify(trimValue));
+
+		this.#onAddressChange();
+	}
+
+	get country() {
+		return this.address.country;
+	}
+
+	get postalCode() {
+		return this.address.postalCode;
+	}
+
+	get items() {
+		return this.#shop?.cart || [{
+			id: this.dataset.item || 'default',
+			weight: Number(this.dataset.weight) || 2,
+			count: Number(this.dataset.count) || 1,
+			size: this.dataset.size || 8,
+		}];
+	}
 
 	connectedCallback() {
-		this.#initFormFields();
-		this.#output = this.shadowRoot.querySelector('[part=result]');
+		this.#parts = {
+			form: this.shadowRoot.querySelector('[part=form]'),
+			output: this.shadowRoot.querySelector('[part=result]'),
+			items: this.shadowRoot.getElementById('item-data'),
+			fromZip: this.shadowRoot.getElementById('from-zip'),
+			toZip: this.shadowRoot.getElementById('to-zip'),
+			toCountry: this.shadowRoot.getElementById('to-country'),
+		};
 
-		this.#form.addEventListener("submit", this.#submitForm);
-		this.#formFields.country.addEventListener("change", this.#handleCountry);
+		if (this.dataset.api) this.api = this.dataset.api;
+		if (this.dataset.from) this.fromZip = this.dataset.from;
+
+		try {
+			if (!this.fromZip) throw new Error('Origin zip code is required.');
+		} catch (error) {
+			console.error(error);
+		}
+
+		this.#updateItemInput();
+		this.#updateAddressInputs();
+		this.#toggleHiddenField(this.#parts.toCountry, !this.dataset.global);
+
+		this.#parts.form.addEventListener('submit', this.#onFormSubmit);
+		this.#parts.toZip.addEventListener('change', this.clear);
+		this.#parts.toCountry.addEventListener('change', this.#onCountryChange);
+
+		this.#ifShopKeep();
 	}
 
 	disconnectedCallback() {
-		this.#form.removeEventListener("submit", this.#submitForm);
-		this.#formFields.country.removeEventListener("change", this.#handleCountry);
+		this.#parts.form.removeEventListener('submit', this.#onFormSubmit);
+		this.#parts.toZip.removeEventListener('change', this.clear);
+		this.#parts.toCountry.removeEventListener('change', this.#onCountryChange);
+    document.removeEventListener('cartChange', (e) => this.#updateItemInput());
 	}
 
-	// private methods
-	#submitForm = (event) => {
+	// public methods
+	clear = () => {
+		this.estimate = null;
+	}
+
+	// shop integration
+  #ifShopKeep = async () => {
+    this.#shop = document.querySelector('shop-keep');
+    await customElements.whenDefined(this.#shop.localName);
+
+    document.addEventListener('cartChange', (e) => this.#updateItemInput());
+
+    this.#updateItemInput();
+  }
+
+	// handlers
+	#onFormSubmit = (event) => {
   	event.preventDefault();
   	this.#fetchData();
 	}
 
-	#handleCountry = () => {
-		if (this.#formFields.country.value === 'US') {
-			this.#formFields.to.toggleAttribute('required', true);
-			this.#formFields.to.setAttribute(
+	#onCountryChange = () => {
+		const isUS = this.#parts.toCountry.value === 'US';
+		this.#parts.toZip.toggleAttribute('required', isUS);
+
+		if (isUS) {
+			this.#parts.toZip.setAttribute(
 				'pattern',
-				shippingRates.usPostalPattern
+				ShippingRates.#usPostalPattern
 			);
 		} else {
-			this.#formFields.to.toggleAttribute('required', false);
-			this.#formFields.to.removeAttribute('pattern');
+			this.#parts.toZip.removeAttribute('pattern');
 		}
 	}
 
-	async #initFormFields() {
-		this.#form = this.shadowRoot.querySelector('[part=form]');
-		if (this.dataset.api) this.#form.setAttribute('action', this.dataset.api);
+	// internals
+	#updateItemInput = () => {
+		const itemShippingData = this.items.map((item) => ({
+			id: item.id,
+			size: item.size,
+			weight: item.weight,
+			count: item.count,
+		}));
 
-		if (this.dataset.global) {
-			const globalField = this.#form.querySelector(':scope [global-field]');
-			globalField.removeAttribute('hidden');
-		}
-
-		const formFields = [
-			...this.#form.querySelectorAll(':scope [name]')
-		];
-
-		formFields.forEach((field) => {
-			this.#formFields[field.name] = field;
-			if (this.dataset[field.name]) field.value = this.dataset[field.name];
-		});
+		this.#parts.items.value = JSON.stringify(itemShippingData);
 	}
 
+	#toggleHiddenField = (part, hidden) => {
+		part?.closest('[part~=form-field]')?.toggleAttribute('hidden', hidden);
+	}
+
+	// on change
+  #onEstimateChange = () => {
+		this.estimate
+			? this.#result(`Estimated shipping: $${this.estimate}`, 'success')
+			: this.#result();
+    this.dispatchEvent(ShippingRates.shippingChange);
+  }
+
+	#onAddressChange = () => {
+		this.#updateAddressInputs();
+		this.clear();
+		this.dispatchEvent(ShippingRates.addressChange);
+  }
+
+	#updateAddressInputs = () => {
+		if (this.address) {
+			this.#parts.toZip.value = this.address.postalCode;
+			this.#parts.toCountry.value = this.address.country;
+		}
+	}
+
+	// fetching async
 	async #fetchData() {
-		this.dataset.status = "fetching";
-		console.log('fetching');
+		if (this.items.length > 0) {
+			this.clear();
+			this.dataset.status = "fetching";
+		} else {
+			this.dataset.status = "error";
+			this.#result(`There are no items in your cart`, 'error');
+			return;
+		}
 
-		const api = this.#form.getAttribute('action');
-		const formData = new FormData(this.#form);
-		const queryString = new URLSearchParams(formData).toString()
+		const formData = new FormData(this.#parts.form);
+		const queryString = new URLSearchParams(formData).toString();
+		const url = `${this.api}?${queryString}`;
 
-		const response = await fetch(`${api}?${queryString}`);
+		const response = await fetch(url);
+		const body = await response.json();
 
 		if (!response.ok) {
-			this.dataset.status = "no-data";
-			console.error(`Response status: ${response.status}`);
-			this.#outputMessage('Something went wrong', 'error');
+			this.dataset.status = "error";
+			console.error(body);
+			this.#result(body, 'error');
+		} else {
+			this.#uspsData = body;
+			this.#updateResults();
 		}
-
-		this.#uspsData = await response.json();
-		this.#updateResults();
 	}
 
 	#updateResults = () => {
-		if (this.#uspsData?.error) {
-			this.#outputMessage(this.#uspsData.error.message, 'error');
+		this.address = this.#uspsData?.address || {
+			country: this.#parts.toCountry.value,
+			postalCode: this.#parts.toZip.value,
+		};
+
+		if (!this.#uspsData.total) {
+			console.error(this.#uspsData);
+			this.#result('Something went wrong', 'error');
 			return;
 		}
 
-		if (this.#uspsData.city) {
-			this.#outputMessage(`
-				Shipping to: ${this.#uspsData.city}, ${this.#uspsData.state}
-			`);
-			return;
-		}
-
-		if (this.#uspsData.totalBasePrice) {
-			this.price = this.#uspsData.totalBasePrice;
-			this.#outputMessage(`
-				Estimated shipping: $${this.#uspsData.totalBasePrice}
-			`);
-			return;
-		}
-
-		this.#outputMessage('Something went wrong', 'error');
+		this.estimate = this.#uspsData.total;
 	}
 
-	#outputMessage = (message, state) => {
-		this.#output.value = message;
-		this.dataset.status = state || 'success';
-		this.#output.toggleAttribute('hidden', !message);
+	#result = (message, state) => {
+		this.#parts.output.value = message || '';
+		this.dataset.status = state || 'no-data';
+		this.#parts.output.toggleAttribute('hidden', !message);
 	}
 
-	// form inputs
-	static usPostalPattern = '[\\d]{5}(-[\\d]{4})?';
+	// static
+	static #usPostalPattern = '[\\d]{5}(-[\\d]{4})?';
 
-	static #zipInput = `
-	  <label for="to" part="label">Postal code</label>
-		<input id="to" name="to" type="text" inputmode="numeric" part="postal-code" autocomplete="postal-code">
-	`;
+	static countryCodes = {
+		AF: "Afghanistan",
+		AX: "Åland Islands",
+		AL: "Albania",
+		DZ: "Algeria",
+		AS: "American Samoa",
+		AD: "Andorra",
+		AO: "Angola",
+		AI: "Anguilla",
+		AQ: "Antarctica",
+		AG: "Antigua and Barbuda",
+		AR: "Argentina",
+		AM: "Armenia",
+		AW: "Aruba",
+		AU: "Australia",
+		AT: "Austria",
+		AZ: "Azerbaijan",
+		BS: "Bahamas",
+		BH: "Bahrain",
+		BD: "Bangladesh",
+		BB: "Barbados",
+		BY: "Belarus",
+		BE: "Belgium",
+		BZ: "Belize",
+		BJ: "Benin",
+		BM: "Bermuda",
+		BT: "Bhutan",
+		BO: "Bolivia (Plurinational State of)",
+		BA: "Bosnia and Herzegovina",
+		BW: "Botswana",
+		BV: "Bouvet Island",
+		BR: "Brazil",
+		IO: "British Indian Ocean Territory",
+		BN: "Brunei Darussalam",
+		BG: "Bulgaria",
+		BF: "Burkina Faso",
+		BI: "Burundi",
+		CV: "Cabo Verde",
+		KH: "Cambodia",
+		CM: "Cameroon",
+		CA: "Canada",
+		BQ: "Caribbean Netherlands",
+		KY: "Cayman Islands",
+		CF: "Central African Republic",
+		TD: "Chad",
+		CL: "Chile",
+		CN: "China",
+		CX: "Christmas Island",
+		CC: "Cocos (Keeling) Islands",
+		CO: "Colombia",
+		KM: "Comoros",
+		CG: "Congo",
+		CD: "Congo, Democratic Republic of the",
+		CK: "Cook Islands",
+		CR: "Costa Rica",
+		HR: "Croatia",
+		CU: "Cuba",
+		CW: "Curaçao",
+		CY: "Cyprus",
+		CZ: "Czech Republic",
+		CI: "Côte d'Ivoire",
+		DK: "Denmark",
+		DJ: "Djibouti",
+		DM: "Dominica",
+		DO: "Dominican Republic",
+		EC: "Ecuador",
+		EG: "Egypt",
+		SV: "El Salvador",
+		GQ: "Equatorial Guinea",
+		ER: "Eritrea",
+		EE: "Estonia",
+		SZ: "Eswatini (Swaziland)",
+		ET: "Ethiopia",
+		FK: "Falkland Islands (Malvinas)",
+		FO: "Faroe Islands",
+		FJ: "Fiji",
+		FI: "Finland",
+		FR: "France",
+		GF: "French Guiana",
+		PF: "French Polynesia",
+		TF: "French Southern Territories",
+		GA: "Gabon",
+		GM: "Gambia",
+		GE: "Georgia",
+		DE: "Germany",
+		GH: "Ghana",
+		GI: "Gibraltar",
+		GR: "Greece",
+		GL: "Greenland",
+		GD: "Grenada",
+		GP: "Guadeloupe",
+		GU: "Guam",
+		GT: "Guatemala",
+		GG: "Guernsey",
+		GN: "Guinea",
+		GW: "Guinea-Bissau",
+		GY: "Guyana",
+		HT: "Haiti",
+		HM: "Heard Island and Mcdonald Islands",
+		HN: "Honduras",
+		HK: "Hong Kong",
+		HU: "Hungary",
+		IS: "Iceland",
+		IN: "India",
+		ID: "Indonesia",
+		IR: "Iran",
+		IQ: "Iraq",
+		IE: "Ireland",
+		IM: "Isle of Man",
+		IL: "Israel",
+		IT: "Italy",
+		JM: "Jamaica",
+		JP: "Japan",
+		JE: "Jersey",
+		JO: "Jordan",
+		KZ: "Kazakhstan",
+		KE: "Kenya",
+		KI: "Kiribati",
+		KP: "Korea, North",
+		KR: "Korea, South",
+		XK: "Kosovo",
+		KW: "Kuwait",
+		KG: "Kyrgyzstan",
+		LA: "Lao People's Democratic Republic",
+		LV: "Latvia",
+		LB: "Lebanon",
+		LS: "Lesotho",
+		LR: "Liberia",
+		LY: "Libya",
+		LI: "Liechtenstein",
+		LT: "Lithuania",
+		LU: "Luxembourg",
+		MO: "Macao",
+		MK: "Macedonia North",
+		MG: "Madagascar",
+		MW: "Malawi",
+		MY: "Malaysia",
+		MV: "Maldives",
+		ML: "Mali",
+		MT: "Malta",
+		MH: "Marshall Islands",
+		MQ: "Martinique",
+		MR: "Mauritania",
+		MU: "Mauritius",
+		YT: "Mayotte",
+		MX: "Mexico",
+		FM: "Micronesia",
+		MD: "Moldova",
+		MC: "Monaco",
+		MN: "Mongolia",
+		ME: "Montenegro",
+		MS: "Montserrat",
+		MA: "Morocco",
+		MZ: "Mozambique",
+		MM: "Myanmar (Burma)",
+		NA: "Namibia",
+		NR: "Nauru",
+		NP: "Nepal",
+		NL: "Netherlands",
+		AN: "Netherlands Antilles",
+		NC: "New Caledonia",
+		NZ: "New Zealand",
+		NI: "Nicaragua",
+		NE: "Niger",
+		NG: "Nigeria",
+		NU: "Niue",
+		NF: "Norfolk Island",
+		MP: "Northern Mariana Islands",
+		NO: "Norway",
+		OM: "Oman",
+		PK: "Pakistan",
+		PW: "Palau",
+		PS: "Palestine",
+		PA: "Panama",
+		PG: "Papua New Guinea",
+		PY: "Paraguay",
+		PE: "Peru",
+		PH: "Philippines",
+		PN: "Pitcairn Islands",
+		PL: "Poland",
+		PT: "Portugal",
+		PR: "Puerto Rico",
+		QA: "Qatar",
+		RE: "Reunion",
+		RO: "Romania",
+		RU: "Russian Federation",
+		RW: "Rwanda",
+		BL: "Saint Barthelemy",
+		SH: "Saint Helena",
+		KN: "Saint Kitts and Nevis",
+		LC: "Saint Lucia",
+		MF: "Saint Martin",
+		PM: "Saint Pierre and Miquelon",
+		VC: "Saint Vincent and the Grenadines",
+		WS: "Samoa",
+		SM: "San Marino",
+		ST: "Sao Tome and Principe",
+		SA: "Saudi Arabia",
+		SN: "Senegal",
+		RS: "Serbia",
+		CS: "Serbia and Montenegro",
+		SC: "Seychelles",
+		SL: "Sierra Leone",
+		SG: "Singapore",
+		SX: "Sint Maarten",
+		SK: "Slovakia",
+		SI: "Slovenia",
+		SB: "Solomon Islands",
+		SO: "Somalia",
+		ZA: "South Africa",
+		GS: "South Georgia and the South Sandwich Islands",
+		SS: "South Sudan",
+		ES: "Spain",
+		LK: "Sri Lanka",
+		SD: "Sudan",
+		SR: "Suriname",
+		SJ: "Svalbard and Jan Mayen",
+		SE: "Sweden",
+		CH: "Switzerland",
+		SY: "Syria",
+		TW: "Taiwan",
+		TJ: "Tajikistan",
+		TZ: "Tanzania",
+		TH: "Thailand",
+		TL: "Timor-Leste",
+		TG: "Togo",
+		TK: "Tokelau",
+		TO: "Tonga",
+		TT: "Trinidad and Tobago",
+		TN: "Tunisia",
+		TR: "Turkey (Türkiye)",
+		TM: "Turkmenistan",
+		TC: "Turks and Caicos Islands",
+		TV: "Tuvalu",
+		UM: "U.S. Outlying Islands",
+		UG: "Uganda",
+		UA: "Ukraine",
+		AE: "United Arab Emirates",
+		GB: "United Kingdom",
+		US: "United States",
+		UY: "Uruguay",
+		UZ: "Uzbekistan",
+		VU: "Vanuatu",
+		VA: "Vatican City Holy See",
+		VE: "Venezuela",
+		VN: "Vietnam",
+		VG: "Virgin Islands, British",
+		VI: "Virgin Islands, U.S",
+		WF: "Wallis and Futuna",
+		EH: "Western Sahara",
+		YE: "Yemen",
+		ZM: "Zambia",
+		ZW: "Zimbabwe",
+	};
 
 	static #countrySelect = `
-		<label for="country" part="label">Country</label>
-		<select id="country" name="country" part="country" autocomplete="country">
-			<option value="AF">Afghanistan</option>
-			<option value="AX">Åland Islands</option>
-			<option value="AL">Albania</option>
-			<option value="DZ">Algeria</option>
-			<option value="AS">American Samoa</option>
-			<option value="AD">Andorra</option>
-			<option value="AO">Angola</option>
-			<option value="AI">Anguilla</option>
-			<option value="AQ">Antarctica</option>
-			<option value="AG">Antigua and Barbuda</option>
-			<option value="AR">Argentina</option>
-			<option value="AM">Armenia</option>
-			<option value="AW">Aruba</option>
-			<option value="AU">Australia</option>
-			<option value="AT">Austria</option>
-			<option value="AZ">Azerbaijan</option>
-			<option value="BS">Bahamas</option>
-			<option value="BH">Bahrain</option>
-			<option value="BD">Bangladesh</option>
-			<option value="BB">Barbados</option>
-			<option value="BY">Belarus</option>
-			<option value="BE">Belgium</option>
-			<option value="BZ">Belize</option>
-			<option value="BJ">Benin</option>
-			<option value="BM">Bermuda</option>
-			<option value="BT">Bhutan</option>
-			<option value="BO">Bolivia (Plurinational State of)</option>
-			<option value="BA">Bosnia and Herzegovina</option>
-			<option value="BW">Botswana</option>
-			<option value="BV">Bouvet Island</option>
-			<option value="BR">Brazil</option>
-			<option value="IO">British Indian Ocean Territory</option>
-			<option value="BN">Brunei Darussalam</option>
-			<option value="BG">Bulgaria</option>
-			<option value="BF">Burkina Faso</option>
-			<option value="BI">Burundi</option>
-			<option value="CV">Cabo Verde</option>
-			<option value="KH">Cambodia</option>
-			<option value="CM">Cameroon</option>
-			<option value="CA">Canada</option>
-			<option value="BQ">Caribbean Netherlands</option>
-			<option value="KY">Cayman Islands</option>
-			<option value="CF">Central African Republic</option>
-			<option value="TD">Chad</option>
-			<option value="CL">Chile</option>
-			<option value="CN">China</option>
-			<option value="CX">Christmas Island</option>
-			<option value="CC">Cocos (Keeling) Islands</option>
-			<option value="CO">Colombia</option>
-			<option value="KM">Comoros</option>
-			<option value="CG">Congo</option>
-			<option value="CD">Congo, Democratic Republic of the</option>
-			<option value="CK">Cook Islands</option>
-			<option value="CR">Costa Rica</option>
-			<option value="HR">Croatia</option>
-			<option value="CU">Cuba</option>
-			<option value="CW">Curaçao</option>
-			<option value="CY">Cyprus</option>
-			<option value="CZ">Czech Republic</option>
-			<option value="CI">Côte d'Ivoire</option>
-			<option value="DK">Denmark</option>
-			<option value="DJ">Djibouti</option>
-			<option value="DM">Dominica</option>
-			<option value="DO">Dominican Republic</option>
-			<option value="EC">Ecuador</option>
-			<option value="EG">Egypt</option>
-			<option value="SV">El Salvador</option>
-			<option value="GQ">Equatorial Guinea</option>
-			<option value="ER">Eritrea</option>
-			<option value="EE">Estonia</option>
-			<option value="SZ">Eswatini (Swaziland)</option>
-			<option value="ET">Ethiopia</option>
-			<option value="FK">Falkland Islands (Malvinas)</option>
-			<option value="FO">Faroe Islands</option>
-			<option value="FJ">Fiji</option>
-			<option value="FI">Finland</option>
-			<option value="FR">France</option>
-			<option value="GF">French Guiana</option>
-			<option value="PF">French Polynesia</option>
-			<option value="TF">French Southern Territories</option>
-			<option value="GA">Gabon</option>
-			<option value="GM">Gambia</option>
-			<option value="GE">Georgia</option>
-			<option value="DE">Germany</option>
-			<option value="GH">Ghana</option>
-			<option value="GI">Gibraltar</option>
-			<option value="GR">Greece</option>
-			<option value="GL">Greenland</option>
-			<option value="GD">Grenada</option>
-			<option value="GP">Guadeloupe</option>
-			<option value="GU">Guam</option>
-			<option value="GT">Guatemala</option>
-			<option value="GG">Guernsey</option>
-			<option value="GN">Guinea</option>
-			<option value="GW">Guinea-Bissau</option>
-			<option value="GY">Guyana</option>
-			<option value="HT">Haiti</option>
-			<option value="HM">Heard Island and Mcdonald Islands</option>
-			<option value="HN">Honduras</option>
-			<option value="HK">Hong Kong</option>
-			<option value="HU">Hungary</option>
-			<option value="IS">Iceland</option>
-			<option value="IN">India</option>
-			<option value="ID">Indonesia</option>
-			<option value="IR">Iran</option>
-			<option value="IQ">Iraq</option>
-			<option value="IE">Ireland</option>
-			<option value="IM">Isle of Man</option>
-			<option value="IL">Israel</option>
-			<option value="IT">Italy</option>
-			<option value="JM">Jamaica</option>
-			<option value="JP">Japan</option>
-			<option value="JE">Jersey</option>
-			<option value="JO">Jordan</option>
-			<option value="KZ">Kazakhstan</option>
-			<option value="KE">Kenya</option>
-			<option value="KI">Kiribati</option>
-			<option value="KP">Korea, North</option>
-			<option value="KR">Korea, South</option>
-			<option value="XK">Kosovo</option>
-			<option value="KW">Kuwait</option>
-			<option value="KG">Kyrgyzstan</option>
-			<option value="LA">Lao People's Democratic Republic</option>
-			<option value="LV">Latvia</option>
-			<option value="LB">Lebanon</option>
-			<option value="LS">Lesotho</option>
-			<option value="LR">Liberia</option>
-			<option value="LY">Libya</option>
-			<option value="LI">Liechtenstein</option>
-			<option value="LT">Lithuania</option>
-			<option value="LU">Luxembourg</option>
-			<option value="MO">Macao</option>
-			<option value="MK">Macedonia North</option>
-			<option value="MG">Madagascar</option>
-			<option value="MW">Malawi</option>
-			<option value="MY">Malaysia</option>
-			<option value="MV">Maldives</option>
-			<option value="ML">Mali</option>
-			<option value="MT">Malta</option>
-			<option value="MH">Marshall Islands</option>
-			<option value="MQ">Martinique</option>
-			<option value="MR">Mauritania</option>
-			<option value="MU">Mauritius</option>
-			<option value="YT">Mayotte</option>
-			<option value="MX">Mexico</option>
-			<option value="FM">Micronesia</option>
-			<option value="MD">Moldova</option>
-			<option value="MC">Monaco</option>
-			<option value="MN">Mongolia</option>
-			<option value="ME">Montenegro</option>
-			<option value="MS">Montserrat</option>
-			<option value="MA">Morocco</option>
-			<option value="MZ">Mozambique</option>
-			<option value="MM">Myanmar (Burma)</option>
-			<option value="NA">Namibia</option>
-			<option value="NR">Nauru</option>
-			<option value="NP">Nepal</option>
-			<option value="NL">Netherlands</option>
-			<option value="AN">Netherlands Antilles</option>
-			<option value="NC">New Caledonia</option>
-			<option value="NZ">New Zealand</option>
-			<option value="NI">Nicaragua</option>
-			<option value="NE">Niger</option>
-			<option value="NG">Nigeria</option>
-			<option value="NU">Niue</option>
-			<option value="NF">Norfolk Island</option>
-			<option value="MP">Northern Mariana Islands</option>
-			<option value="NO">Norway</option>
-			<option value="OM">Oman</option>
-			<option value="PK">Pakistan</option>
-			<option value="PW">Palau</option>
-			<option value="PS">Palestine</option>
-			<option value="PA">Panama</option>
-			<option value="PG">Papua New Guinea</option>
-			<option value="PY">Paraguay</option>
-			<option value="PE">Peru</option>
-			<option value="PH">Philippines</option>
-			<option value="PN">Pitcairn Islands</option>
-			<option value="PL">Poland</option>
-			<option value="PT">Portugal</option>
-			<option value="PR">Puerto Rico</option>
-			<option value="QA">Qatar</option>
-			<option value="RE">Reunion</option>
-			<option value="RO">Romania</option>
-			<option value="RU">Russian Federation</option>
-			<option value="RW">Rwanda</option>
-			<option value="BL">Saint Barthelemy</option>
-			<option value="SH">Saint Helena</option>
-			<option value="KN">Saint Kitts and Nevis</option>
-			<option value="LC">Saint Lucia</option>
-			<option value="MF">Saint Martin</option>
-			<option value="PM">Saint Pierre and Miquelon</option>
-			<option value="VC">Saint Vincent and the Grenadines</option>
-			<option value="WS">Samoa</option>
-			<option value="SM">San Marino</option>
-			<option value="ST">Sao Tome and Principe</option>
-			<option value="SA">Saudi Arabia</option>
-			<option value="SN">Senegal</option>
-			<option value="RS">Serbia</option>
-			<option value="CS">Serbia and Montenegro</option>
-			<option value="SC">Seychelles</option>
-			<option value="SL">Sierra Leone</option>
-			<option value="SG">Singapore</option>
-			<option value="SX">Sint Maarten</option>
-			<option value="SK">Slovakia</option>
-			<option value="SI">Slovenia</option>
-			<option value="SB">Solomon Islands</option>
-			<option value="SO">Somalia</option>
-			<option value="ZA">South Africa</option>
-			<option value="GS">South Georgia and the South Sandwich Islands</option>
-			<option value="SS">South Sudan</option>
-			<option value="ES">Spain</option>
-			<option value="LK">Sri Lanka</option>
-			<option value="SD">Sudan</option>
-			<option value="SR">Suriname</option>
-			<option value="SJ">Svalbard and Jan Mayen</option>
-			<option value="SE">Sweden</option>
-			<option value="CH">Switzerland</option>
-			<option value="SY">Syria</option>
-			<option value="TW">Taiwan</option>
-			<option value="TJ">Tajikistan</option>
-			<option value="TZ">Tanzania</option>
-			<option value="TH">Thailand</option>
-			<option value="TL">Timor-Leste</option>
-			<option value="TG">Togo</option>
-			<option value="TK">Tokelau</option>
-			<option value="TO">Tonga</option>
-			<option value="TT">Trinidad and Tobago</option>
-			<option value="TN">Tunisia</option>
-			<option value="TR">Turkey (Türkiye)</option>
-			<option value="TM">Turkmenistan</option>
-			<option value="TC">Turks and Caicos Islands</option>
-			<option value="TV">Tuvalu</option>
-			<option value="UM">U.S. Outlying Islands</option>
-			<option value="UG">Uganda</option>
-			<option value="UA">Ukraine</option>
-			<option value="AE">United Arab Emirates</option>
-			<option value="GB">United Kingdom</option>
-			<option value="US" selected>United States</option>
-			<option value="UY">Uruguay</option>
-			<option value="UZ">Uzbekistan</option>
-			<option value="VU">Vanuatu</option>
-			<option value="VA">Vatican City Holy See</option>
-			<option value="VE">Venezuela</option>
-			<option value="VN">Vietnam</option>
-			<option value="VG">Virgin Islands, British</option>
-			<option value="VI">Virgin Islands, U.S</option>
-			<option value="WF">Wallis and Futuna</option>
-			<option value="EH">Western Sahara</option>
-			<option value="YE">Yemen</option>
-			<option value="ZM">Zambia</option>
-			<option value="ZW">Zimbabwe</option>
+		<label for="to-country" part="label">Country</label>
+		<select id="to-country" name="to-country" part="country" autocomplete="shipping country">
+			${Object.keys(ShippingRates.countryCodes).map((code) => {
+				const selected = code === 'US' ? ` selected` : '';
+
+				return `
+					<option value="${code}"${selected}>
+						${ShippingRates.countryCodes[code]}
+					</option>
+				`;
+			}).join('')}
 		</select>
 	`;
 }
 
-shippingRates.register();
+ShippingRates.register();

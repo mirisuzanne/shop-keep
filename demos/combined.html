@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Shipping-rates Demo" />
+    <title>Shipping-rates demo</title>
+    <style>
+      @import url(./starter.css) layer(starter);
+    </style>
+  </head>
+  <body>
+    <a href="#main" visually-hidden="skip-links">Skip to content</a>
+
+    <nav>
+      <ul>
+        <li>
+          <a href="./demos/shipping-rates.html">shipping-rates</a>
+        </li>
+        <li>
+          <a href="./demos/combined.html" aria-current="page">combined</a>
+        </li>
+        <li>
+          <a href="https://github.com/mirisuzanne/shop-keep">Source on github</a>
+        </li>
+      </ul>
+    </nav>
+
+    <main id="main">
+      <h1>Combined Web Components</h1>
+
+      <ul>
+        <li>
+          If there is a shop present,
+          then the cart items override the the data attributes.
+        </li>
+        <li>
+          If the cart is empty,
+          provide an error rather than fetching.
+        </li>
+        <li>
+          If there is no cart,
+          then provide fallback data
+          for fetching a rough shipping baseline.
+        </li>
+      </ul>
+
+      <shop-keep data-show="after">Cart:</shop-keep>
+
+      <shop-add
+        data-title="test item"
+        data-product="testID"
+        data-weight="1.5"
+        data-size="6"
+      >
+        <button aria-pressed="false">Add to cart</button>
+      </shop-add>
+
+      <shipping-rates
+        data-api="/api/shipping"
+        data-from="80205"
+      ></shipping-rates>
+
+      <!-- <h2>Fallbacks & Extras</h2> -->
+    </main>
+
+    <script type="module" src="../shop-keep.js"></script>
+    <script type="module" src="../shop-add.js"></script>
+    <script type="module" src="../shipping-rates.js"></script>
+  </body>
+</html>

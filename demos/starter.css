@@ -1,0 +1,145 @@
+@layer reset, base;
+
+@layer base {
+  html {
+    --base-font-size: 20px;
+    --gap: round(up, 3vmin, 0.25lh);
+    --tab-size: 2;
+    --tab: calc(var(--tab-size, 2) * 1ch);
+
+		/* issues like to pop up without this */
+		-moz-text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+
+    /* not fluid, just clamped by user preferences */
+    font-size: clamp(1em, var(--base-font-size), 1.25em);
+		font-size-adjust: from-font;
+    interpolate-size: allow-keywords;
+    line-height: 1.5;
+    tab-size: var(--tab-size);
+  }
+
+  body { margin: var(--gap); }
+  body > :is(header, main, footer) {
+    container: layout / inline-size;
+  }
+
+  /* prose */
+  h1, h2, h3 {
+    line-height: 1.25;
+    margin-block: 0.25rlh;
+  }
+
+  figure { margin-inline: unset; }
+  blockquote { margin-inline: var(--tab); }
+  p { margin-block: 0.5lh; }
+  ol, ul { padding-inline-start: var(--tab); }
+  dd { margin-inline-start: var(--tab); }
+  hr {
+    border: 0 dotted;
+    border-block-end-width: thin;
+    margin-block: 1.5lh;
+  }
+
+  /* controls */
+  :target { scroll-margin: 1lh; }
+  :focus { outline-offset: 4px; }
+  label { display: block; }
+  textarea {
+    field-sizing: content;
+    inline-size: 100%;
+    min-block-size: 4lh;
+  }
+
+  /* tables */
+  table {
+    border-collapse: collapse;
+    inline-size: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+
+  th, td {
+    border: thin dotted;
+    text-align: left;
+    padding: 0.25lh 1ch;
+    vertical-align: top;
+  }
+
+  /* visibility */
+  [visually-hidden=skip-links]:focus-within {
+    background: Canvas;
+    border: thin solid grey;
+    color: CanvasText;
+    inset: 0 auto auto 0;
+    list-style: none;
+    margin: unset;
+    padding: 1em;
+    position: fixed;
+  }
+}
+
+@layer reset {
+  html {
+    block-size: 100%;
+    color-scheme: light dark;
+    overflow-wrap: break-word;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
+
+  body { margin: unset; }
+
+  pre {
+    white-space: pre-wrap; /* old syntax */
+    white-space: preserve wrap; /* new syntax */
+  }
+
+  /* media */
+  picture { display: contents; }
+  source { display: none; }
+
+  img,
+  video,
+  iframe {
+    display: block;
+    block-size: auto;
+    max-inline-size: 100%;
+  }
+
+  /* controls */
+  input, button, textarea, select {
+		font: inherit;
+	}
+
+  button,
+  input:where(
+    [type="submit"],
+    [type="reset"],
+    [type="button"]
+  ) {
+    background: CanvasText;
+    color: Canvas;
+    border: thin solid grey;
+  }
+
+  [aria-expanded=true],
+  [aria-pressed=true] {
+    background: SelectedItem;
+    border-color: CanvasText;
+    color: SelectedItemText;
+  }
+
+  /* visibility */
+  [hidden] { display: none !important; }
+
+  visually-hidden,
+  [visually-hidden]:not(:focus-within):not(:active) {
+    clip-path: inset(50%) !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    white-space: nowrap !important;
+    width: 1px !important;
+  }
+}

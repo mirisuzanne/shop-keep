@@ -1,7 +1,7 @@
 {
   "name": "@terriblemia/shipping-rates",
   "version": "0.1.0",
-  "description": "A Web Component for…",
+  "description": "A Web Component for shipping rates",
   "main": "shipping-rates.js",
   "type": "module",
   "scripts": {

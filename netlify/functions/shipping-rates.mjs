@@ -1,12 +1,13 @@
 import fetch from 'node-fetch';
 
 const apiOptions = {
-	test: 'apis-tem.usps.com',
+	dev: 'apis-tem.usps.com',
 	prod: 'apis.usps.com',
 }
 
-const api = apiOptions.test;
+const api = apiOptions[process.env.CONTEXT] || apiOptions.prod;
 
+// auth
 let authToken;
 
 const getAuth = async () => {
@@ -27,7 +28,7 @@ const getAuth = async () => {
 	return auth.access_token;
 }
 
-
+// api calls
 const cityStateFromZip = async (zip) => {
 	const auth = await getAuth();
 	const cityStateResponse = await fetch(`https://${api}/addresses/v3/city-state?ZIPCode=${zip}`, {
@@ -40,23 +41,11 @@ const cityStateFromZip = async (zip) => {
 	return await cityStateResponse.json();
 }
 
-const domesticRates = async (details = {}) => {
+const getRates = async (url, body) => {
 	const auth = await getAuth();
-	const ratesResponse = await fetch(`https://${api}/prices/v3/base-rates/search`, {
+	const ratesResponse = await fetch(url, {
 		method: 'post',
-		body: JSON.stringify({
-			originZIPCode: details.from,
-			destinationZIPCode: details.to,
-			weight: Number(details.weight),
-			length: Number(details.length),
-			width: Number(details.width),
-			height: Number(details.height),
-			priceType: "COMMERCIAL",
-			mailClass: "USPS_GROUND_ADVANTAGE",
-			processingCategory: "MACHINABLE",
-			rateIndicator: "SP",
-			destinationEntryFacilityType: "NONE",
-		}),
+		body: JSON.stringify(body),
 		headers: {
 			accept: 'Content-Type: application/json',
 			Authorization: `Bearer ${auth}`,
@@ -67,70 +56,112 @@ const domesticRates = async (details = {}) => {
 	return await ratesResponse.json();
 }
 
-const globalRates = async (details = {}) => {
-	const mailClass = details.weight < 4
-		? 'FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE'
-		: 'PRIORITY_MAIL_INTERNATIONAL';
+const domesticRates = async (shipping, item) => await getRates(
+	`https://${api}/prices/v3/base-rates/search`,
+	{
+		...item,
+		originZIPCode: shipping.fromZip,
+		destinationZIPCode: shipping.toZip,
+		priceType: "COMMERCIAL",
+		mailClass: "USPS_GROUND_ADVANTAGE",
+		processingCategory: "MACHINABLE",
+		rateIndicator: "SP",
+		destinationEntryFacilityType: "NONE",
+	}
+);
 
-	const auth = await getAuth();
-	const ratesResponse = await fetch(`https://${api}/international-prices/v3/base-rates/search`, {
-		method: 'post',
-		body: JSON.stringify({
-			originZIPCode: details.from,
-			foreignPostalCode: details.to,
-			destinationCountryCode: details.country,
-			weight: Number(details.weight),
-			length: Number(details.length),
-			width: Number(details.width),
-			height: Number(details.height),
-			priceType: "COMMERCIAL",
-			mailClass,
-			processingCategory: "MACHINABLE",
-			rateIndicator: "SP",
-			destinationEntryFacilityType: "NONE",
-		}),
-		headers: {
-			accept: 'Content-Type: application/json',
-			Authorization: `Bearer ${auth}`,
-			'Content-Type': 'application/json',
-		},
-	});
+const globalRates = async (shipping, item) => await getRates(
+	`https://${api}/international-prices/v3/base-rates/search`,
+	{
+		...item,
+		originZIPCode: shipping.fromZip,
+		foreignPostalCode: shipping.toZip,
+		destinationCountryCode: shipping.toCountry,
+		priceType: "COMMERCIAL",
+		mailClass: item.weight < 4
+			? 'FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE'
+			: 'PRIORITY_MAIL_INTERNATIONAL',
+		processingCategory: "MACHINABLE",
+		rateIndicator: "SP",
+		destinationEntryFacilityType: "NONE",
+	}
+);
 
-	return await ratesResponse.json();
+const rateForItem = async (shipping, item) => {
+	const reply = shipping.toCountry === 'US'
+		? await domesticRates(shipping, item.ship)
+		: await globalRates(shipping, item.ship);
+
+	return Number(reply.totalBasePrice) * item.count;
 }
 
+const getRatesForItems = async (shipping, items) => {
+	const rates = items.map(async (item) => await rateForItem(shipping, item));
+	return await Promise.all(rates);
+}
+
+// form data
+const numberSort = (list) => list.toSorted((a,b) => b - a);
+
+const expandSize = (size) => {
+	const sizeArray = size.split(' ').map((d) => Number(d));
+
+	while (sizeArray.length < 3) {
+		sizeArray.push(sizeArray.at(-1));
+	}
+
+	return numberSort(sizeArray.map((n) => Number(n)));
+}
+
+const expandItem = (item) => {
+	const size = expandSize(item.size);
+
+	return {
+		count: Number(item.count || 1),
+		ship: {
+			length: Number(size[0]),
+			height: Number(size[1]),
+			width: Number(size[2]),
+			weight: Number(item.weight),
+		}
+	};
+}
+
+// process
 export default async (request, context) => {
 	try {
-		const url = new URL(request.url);
-		const query = new URLSearchParams(url.search);
+		const query = new URL(request.url).searchParams;
 
-		const details = {
-			from: query.get('from') || '80205',
-			to: query.get('to'),
-			weight: query.get('weight'),
-			length: query.get('length'),
-			width: query.get('width'),
-			height: query.get('height'),
-			country: query.get('country') || 'us',
-		}
+		const shipping = {
+			fromZip: query.get('from-zip') || '80205',
+			toZip: query.get('to-zip'),
+			toCountry: query.get('to-country') || 'US',
+		};
 
-		if (!details.to) throw 'No destination zip code provided';
+		const items = JSON.parse(query.get('items')).map(expandItem);
 
-		if (!Object.values(details).every((value) => value)) {
-			const reply = await cityStateFromZip(details.to);
+		console.log([shipping, items]);
 
-			return new Response(
-				JSON.stringify(reply),
-				{ status: 200, statusText: 'ok', }
-			);
-		}
+		const rates = await getRatesForItems(shipping, items);
+		const total = rates.reduce((total, current) => total + (current || 0), 0);
 
-		const reply = details.country === 'US'
-			? await domesticRates(details)
-			: await globalRates(details);
+		const cityState = shipping.toCountry === 'US'
+			? await cityStateFromZip(shipping.toZip)
+			: null
+		;
+
+		const address = cityState?.city
+			? {
+				locality: cityState.city,
+				region: cityState.state,
+				postalCode: cityState.ZIPCode,
+				country: shipping.toCountry,
+			}
+			: null
+		;
 
 		return new Response(
-			JSON.stringify(reply),
+			JSON.stringify({ rates, total, address }),
 			{ status: 200, statusText: 'ok', }
 		);
 	} catch (e) {
@@ -144,7 +175,7 @@ export default async (request, context) => {
 }
 
 export const config = {
-  path: "/api",
+  path: "/api/shipping",
 	rateLimit: {
     windowLimit: 100,
     windowSize: 60,
