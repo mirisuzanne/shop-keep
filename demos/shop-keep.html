@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Shop-keep Demo" />
+    <title>Shop-keep demo</title>
+    <style>
+      @import url(./starter.css) layer(starter);
+    </style>
+  </head>
+  <body>
+    <a href="#main" visually-hidden="skip-links">Skip to content</a>
+
+    <nav>
+      <ul>
+        <li>
+          <a href="/" rel="home">index</a>
+        </li>
+        <li>
+          <a href="./shop-keep.html" aria-current="page">shop-keep</a>
+        </li>
+        <li>
+          <a href="./shipping-rates.html">shipping-rates</a>
+        </li>
+        <li>
+          <a href="./combined.html">combined</a>
+        </li>
+        <li>
+          <a href="https://github.com/mirisuzanne/shop-keep">Source on github</a>
+        </li>
+      </ul>
+    </nav>
+
+    <main id="main">
+      <h1>&lt;shop-keep> Web Component</h1>
+
+      <p>
+        Cart:
+        <shop-keep id="cart" data-show></shop-keep>
+      </p>
+
+      <div
+        data-title="test item"
+        data-product="test1"
+        data-weight="1.5"
+        data-size="6"
+      >
+        <p>
+          These use a shared parent element
+          to define the product in question:
+        </p>
+        <button
+          commandfor="cart"
+          command="--add-product"
+        >Add test1</button>
+
+        <button
+          commandfor="cart"
+          command="--remove-product"
+        >Remove test1</button>
+      </div>
+
+      <p>These each individually reference a product:</p>
+
+      <button
+        commandfor="cart"
+        command="--add-product"
+        data-title="test item two"
+        data-product="test2"
+      >Add test2</button>
+
+      <button
+        commandfor="cart"
+        command="--remove-product"
+        data-product="test2"
+      >Remove test2</button>
+
+      <p>
+        This one doesn't need
+        to reference a specific product:
+      </p>
+
+      <button
+        commandfor="cart"
+        command="--empty"
+      >empty cart</button>
+    </main>
+
+    <script type="module" src="../shop-keep.js"></script>
+  </body>
+</html>

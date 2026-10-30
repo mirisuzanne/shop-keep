@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Shipping-rates Demo" />
-    <title>Shipping-rates demo</title>
+    <title>Combined demo</title>
     <style>
       @import url(./starter.css) layer(starter);
     </style>
@@ -15,10 +15,16 @@
     <nav>
       <ul>
         <li>
-          <a href="./demos/shipping-rates.html">shipping-rates</a>
+          <a href="/" rel="home">index</a>
         </li>
         <li>
-          <a href="./demos/combined.html" aria-current="page">combined</a>
+          <a href="./shop-keep.html">shop-keep</a>
+        </li>
+        <li>
+          <a href="./shipping-rates.html">shipping-rates</a>
+        </li>
+        <li>
+          <a href="./combined.html" aria-current="page">combined</a>
         </li>
         <li>
           <a href="https://github.com/mirisuzanne/shop-keep">Source on github</a>
@@ -32,29 +38,32 @@
       <ul>
         <li>
           If there is a shop present,
-          then the cart items override the the data attributes.
+          then the cart items override the
+          shipping-rates data attributes.
         </li>
         <li>
-          If the cart is empty,
-          provide an error rather than fetching.
-        </li>
-        <li>
-          If there is no cart,
-          then provide fallback data
-          for fetching a rough shipping baseline.
+          If there are no items,
+          provide an error message rather than fetching.
         </li>
       </ul>
 
-      <shop-keep data-show="after">Cart:</shop-keep>
+      <p>
+        Items in the cart:
+        <shop-keep id="shop" data-show></shop-keep>
+      </p>
 
-      <shop-add
+      <button
+        commandfor="shop"
+        command="--add-product"
         data-title="test item"
         data-product="testID"
         data-weight="1.5"
         data-size="6"
-      >
-        <button aria-pressed="false">Add to cart</button>
-      </shop-add>
+      >add testID to cart</button>
+
+      <button commandfor="shop" command="--empty">empty cart</button>
+
+      <hr>
 
       <shipping-rates
         data-api="/api/shipping"
@@ -65,7 +74,6 @@
     </main>
 
     <script type="module" src="../shop-keep.js"></script>
-    <script type="module" src="../shop-add.js"></script>
     <script type="module" src="../shipping-rates.js"></script>
   </body>
 </html>

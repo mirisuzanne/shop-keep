@@ -8,9 +8,7 @@ class ShopKeep extends HTMLElement {
   static #appendShadowTemplate = (node) => {
     const template = document.createElement("template");
     template.innerHTML = `
-      <output part="output before"></output>
-      <slot><output part="output slot"></output></slot>
-      <output part="output after"></output>
+      <output part="output"></output>
     `;
     const shadowRoot = node.attachShadow({ mode: "open" });
     shadowRoot.appendChild(template.content.cloneNode(true));
@@ -19,8 +17,12 @@ class ShopKeep extends HTMLElement {
   static #adoptShadowStyles = (node) => {
     const shadowStyle = new CSSStyleSheet();
     shadowStyle.replaceSync(`
-      :host(:not([data-show])),
-      [part~=output]:empty { display: none; }
+      :host(:not([data-show])) { display: none; }
+
+      :host([data-show=products]:not([data-count])),
+      :host([data-show=products][data-count='0']) {
+        display: none;
+      }
 		`);
     node.shadowRoot.adoptedStyleSheets = [shadowStyle];
   }
@@ -33,7 +35,7 @@ class ShopKeep extends HTMLElement {
     ShopKeep.#adoptShadowStyles(this);
   }
 
-  #parts;
+  #output;
 
 	get cart() {
     const cart = localStorage.getItem('cart');
@@ -51,12 +53,13 @@ class ShopKeep extends HTMLElement {
     if (update === replace) return;
 
     localStorage.setItem('cart', JSON.stringify(update));
+
+    this.dataset.count = this.count;
     this.dispatchEvent(ShopKeep.cartChange);
 
     if (!this.hasAttribute('data-show')) return;
 
-    const outPut = this.#parts[this.dataset.show || 'slot'];
-    outPut.value = this.count;
+    this.#output.value = this.count;
   }
 
   get count() {
@@ -70,18 +73,17 @@ class ShopKeep extends HTMLElement {
   }
 
 	connectedCallback() {
+    this.#output = this.shadowRoot.querySelector('output');
+
     window.addEventListener('storage', (e) => this.refresh());
-    this.#parts = {
-      before: this.shadowRoot.querySelector('[part~=before]'),
-      slot: this.shadowRoot.querySelector('[part~=slot]'),
-      after: this.shadowRoot.querySelector('[part~=after]'),
-    };
+    this.addEventListener('command', this.#commands);
 
     this.refresh();
 	}
 
 	disconnectedCallback() {
     window.removeEventListener('storage', (e) => this.refresh());
+    this.removeEventListener('command', this.#commands);
 	}
 
   validProduct = (item) => {
@@ -117,18 +119,57 @@ class ShopKeep extends HTMLElement {
 
   removeProduct = (id) => {
     const cartIndex = this.findProductIndex(id);
-    if (!~cartIndex) throw new Error('No item in cart for:', id);
+    if (!~cartIndex) return;
 
     const update = this.cart.toSpliced(cartIndex, 1);
     this.cart = update;
   }
 
-  clearCart = () => {
+  productFrom = (src) => {
+    const productSrc = src.closest('[data-product]');
+    if (!productSrc) return;
+
+    return {
+      title: productSrc.dataset.title,
+      id: productSrc.dataset.product,
+      weight: productSrc.dataset.weight,
+      size: productSrc.dataset.size,
+      price: productSrc.dataset.price,
+      stock: Number(productSrc.dataset.stock || 1),
+      count: Number(productSrc.dataset.count || 1),
+    };
+  }
+
+  empty = () => {
     this.cart = [];
   }
 
   refresh = () => {
     this.cart = this.cart;
+  }
+
+  #commands = (event) => {
+    const srcProduct = this.productFrom(event.source);
+
+    switch (event.command) {
+      case '--refresh':
+        this.refresh();
+        break;
+      case '--empty':
+        this.empty();
+        break;
+      case '--add-product':
+        if (!srcProduct) console.warn('Product is not defined');
+        const inCart = this.findProduct(srcProduct.id);
+        if (inCart) inCart.count += srcProduct.count;
+        this.setProduct(inCart || srcProduct);
+        break;
+      case '--remove-product':
+        this.removeProduct(srcProduct.id);
+        break;
+      default:
+        break;
+    }
   }
 }
 
