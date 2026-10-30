@@ -50,16 +50,11 @@ class ShopKeep extends HTMLElement {
       .map((item) => this.validProduct(item))
       .filter((item) => item.count > 0);
 
+    this.#updateOutput();
     if (update === replace) return;
 
     localStorage.setItem('cart', JSON.stringify(update));
-
-    this.dataset.count = this.count;
     this.dispatchEvent(ShopKeep.cartChange);
-
-    if (!this.hasAttribute('data-show')) return;
-
-    this.#output.value = this.count;
   }
 
   get count() {
@@ -75,14 +70,16 @@ class ShopKeep extends HTMLElement {
 	connectedCallback() {
     this.#output = this.shadowRoot.querySelector('output');
 
-    window.addEventListener('storage', (e) => this.refresh());
+    window.addEventListener('storage', this.#updateOutput);
+    document.addEventListener('cartChange', this.#updateOutput);
     this.addEventListener('command', this.#commands);
 
     this.refresh();
 	}
 
 	disconnectedCallback() {
-    window.removeEventListener('storage', (e) => this.refresh());
+    window.removeEventListener('storage', this.#updateOutput);
+    document.removeEventListener('cartChange', this.#updateOutput);
     this.removeEventListener('command', this.#commands);
 	}
 
@@ -146,6 +143,11 @@ class ShopKeep extends HTMLElement {
 
   refresh = () => {
     this.cart = this.cart;
+  }
+
+  #updateOutput = () => {
+    this.dataset.count = this.count;
+    this.#output.value = this.count;
   }
 
   #commands = (event) => {
