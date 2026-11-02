@@ -18,7 +18,7 @@
           <a href="/" rel="home" aria-current="page">index</a>
         </li>
         <li>
-          <a href="./demos/shop-keep.html">shop-keep</a>
+          <a href="./demos/shop-keep.html">shop-keep & shop-control</a>
         </li>
         <li>
           <a href="./demos/shipping-rates.html">shipping-rates</a>
@@ -32,12 +32,36 @@
       </ul>
     </nav>
 
+    <h2>Features</h2>
+    <ul>
+      <li>
+        Shop-keep saves and updates the shopping cart
+      </li>
+      <li>
+        Buttons can use <code>commandfor</code>
+        to send the cart a variety of commands –
+        such as adding, incrementing, or removing items.
+      </li>
+      <li>
+        Cart-control form fields
+        can be used to edit the properties
+        of a product in the cart –
+        such as the count, note,
+        or name-your-price offer.
+      </li>
+      <li>
+        Shipping-rate form
+        (along with an API endpoint)
+        can be used to estimate USPS shipping rates
+        for a single item,
+        or all items in the cart.
+      </li>
+    </ul>
+
     <h2>Todo:</h2>
     <ul>
-      <li>Cart-control component allows editing items in the cart</li>
-      <li>Cart-display component shows/edits the whole list</li>
+      <li>Cart-display component shows/edits the whole item list</li>
       <li>Check-out component sends the data somewhere</li>
-      <li>Support for <em>pay what you want</em> pricing</li>
       <li>Polyfill commandfor/command invokers</li>
     </ul>
 

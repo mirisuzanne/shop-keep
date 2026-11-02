@@ -18,7 +18,7 @@
           <a href="/" rel="home">index</a>
         </li>
         <li>
-          <a href="./shop-keep.html" aria-current="page">shop-keep</a>
+          <a href="./shop-keep.html" aria-current="page">shop-keep & shop-control</a>
         </li>
         <li>
           <a href="./shipping-rates.html">shipping-rates</a>
@@ -52,10 +52,13 @@
         data-product="test1"
         data-weight="1.5"
         data-size="6"
+        data-stock="10"
+        data-price="35"
       >
         <p>
           These use a shared parent element
-          to define the product in question:
+          to define the product,
+          with 10 in stock:
         </p>
         <button
           commandfor="cart"
@@ -64,17 +67,28 @@
 
         <button
           commandfor="cart"
+          command="--reduce-product"
+        >Reduce test1</button>
+
+        <button
+          commandfor="cart"
           command="--remove-product"
         >Remove test1</button>
       </div>
 
-      <p>These each individually reference a product:</p>
+      <p>
+        These each individually reference a product by ID,
+        with 5 available:
+      </p>
 
       <button
         commandfor="cart"
         command="--add-product"
         data-title="test item two"
         data-product="test2"
+        data-count="1"
+        data-stock="5"
+        data-price="15"
       >Add test2</button>
 
       <button
@@ -82,6 +96,21 @@
         command="--remove-product"
         data-product="test2"
       >Remove test2</button>
+
+      <shop-control data-product="test2" data-prop="count">
+        <label for="test2-count">test 2 count</label>
+        <input id="test2-count" type="number" min="0" value="0">
+      </shop-control>
+
+      <shop-control data-product="test2" data-prop="offer">
+        <label for="test2-offer">test 2 offer</label>
+        <input id="test2-offer" type="number" min="0">
+      </shop-control>
+
+      <shop-control data-product="test2" data-prop="note">
+        <label for="test2-note">test 2 notes</label>
+        <input id="test2-note" type="text">
+      </shop-control>
 
       <p>
         This one doesn't need
@@ -95,5 +124,6 @@
     </main>
 
     <script type="module" src="../shop-keep.js"></script>
+    <script type="module" src="../shop-control.js"></script>
   </body>
 </html>

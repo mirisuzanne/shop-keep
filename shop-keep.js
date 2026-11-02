@@ -45,15 +45,12 @@ class ShopKeep extends HTMLElement {
   }
 
   set cart(data) {
-    const replace = this.cart;
-    const update = data
-      .map((item) => this.validProduct(item))
-      .filter((item) => item.count > 0);
+    const previous = this.cart;
 
     this.#updateOutput();
-    if (update === replace) return;
+    if (data === previous) return;
 
-    localStorage.setItem('cart', JSON.stringify(update));
+    localStorage.setItem('cart', JSON.stringify(data));
     this.dispatchEvent(ShopKeep.cartChange);
   }
 
@@ -67,6 +64,7 @@ class ShopKeep extends HTMLElement {
     ), 0);
   }
 
+  // callbacks
 	connectedCallback() {
     this.#output = this.shadowRoot.querySelector('output');
 
@@ -83,66 +81,137 @@ class ShopKeep extends HTMLElement {
     this.removeEventListener('command', this.#commands);
 	}
 
+  // products
   validProduct = (item) => {
     if (typeof item !== 'object') return;
     if (!item.id) return;
-    item.count = item.count ? Number(item.count) : 1;
+    if (!item.price) console.warn('No price provided');
+
+    if (item.offer) item.offer = Number(item.offer);
+
     item.price = item.price ? Number(item.price) : 0;
+    item.count = item.count ? Number(item.count) : 0;
+
     return item;
   }
 
-	findProduct = (id) => this.cart.find((item) => item.id === id);
-	findProductIndex = (id) => this.cart.findIndex((item) => item.id === id);
-
-  productUnitPrice = (item) => item
-    ? Number(item.userPrice || item.price || 0)
+  // product prices
+  productUnitPrice = (product) => product
+    ? Number(product.offer || product.price || 0)
     : undefined;
 
-  productTotalPrice = (item) => item
-    ? Number(item.count) * this.productUnitPrice(item)
+  productTotalPrice = (product) => product
+    ? Number(product.count) * this.productUnitPrice(product)
     : undefined;
 
-  setProduct = (item) => {
-    if (!this.validProduct(item)) throw new Error('Invalid item', item);
+  // find by ID
+	getProductByID = (id) => this.cart.find((item) => item.id === id);
+	productIndexByID = (id) => this.cart.findIndex((item) => item.id === id);
+
+  // find from source
+  srcProductElement = (el) => el.closest('[data-product]');
+
+  srcProductID = (el) => {
+    const src = this.srcProductElement(el);
+    return src?.dataset.product;
+  }
+
+  srcProductInCart = (src) => {
+    const id = this.srcProductID(src);
+    return this.getProductByID(id);
+  }
+
+  srcProduct = (src) => {
+    const productElement = this.srcProductElement(src);
+    if (!productElement) return;
+
+    return {
+      title: productElement.dataset.title,
+      id: productElement.dataset.product,
+      weight: productElement.dataset.weight,
+      size: productElement.dataset.size,
+      price: productElement.dataset.price,
+      stock: Number(productElement.dataset.stock || 0),
+      count: Number(productElement.dataset.count || 1),
+    };
+  }
+
+  srcProductDetails = (src) => {
+    const srcProduct = this.srcProduct(src);
+
+    if (!srcProduct) {
+      console.error('Product is not defined');
+      return;
+    }
+
+    const inCart = this.getProductByID(srcProduct.id);
+
+    return {
+      src: srcProduct,
+      cart: inCart,
+    }
+  }
+
+  // add and remove products
+  setProduct = (product) => {
+    if (!this.validProduct(product)) throw new Error('Invalid product', product);
+
+    product.count = Math.max(0, product.count);
+    if (product.count && product.stock) product.count = Math.min(product.count, product.stock);
 
     let update = this.cart;
-    const cartIndex = this.findProductIndex(item.id);
+    const cartIndex = this.productIndexByID(product.id);
 
-    if (~cartIndex) update[cartIndex] = item;
-    else update.push(item);
+    if (~cartIndex) update[cartIndex] = product;
+    else update.push(product);
 
     this.cart = update;
   }
 
+  moveProductCount = (product, count) => {
+    product.count += count;
+    this.setProduct(product);
+  }
+
+  addProduct = (id, count) => {
+    const inCart = this.getProductByID(id);
+    if (!inCart) return;
+    this.moveProductCount(inCart, count || 1);
+  }
+
+  reduceProduct = (id, count) => {
+    const inCart = this.getProductByID(id);
+    if (!inCart) return;
+    this.moveProductCount(inCart, (count || 1) * -1);
+  }
+
   removeProduct = (id) => {
-    const cartIndex = this.findProductIndex(id);
+    const cartIndex = this.productIndexByID(id);
     if (!~cartIndex) return;
 
     const update = this.cart.toSpliced(cartIndex, 1);
     this.cart = update;
   }
 
-  productFrom = (src) => {
-    const productSrc = src.closest('[data-product]');
-    if (!productSrc) return;
+  createOrAddProduct = (product) => {
+    const inCart = this.getProductByID(product.id);
 
-    return {
-      title: productSrc.dataset.title,
-      id: productSrc.dataset.product,
-      weight: productSrc.dataset.weight,
-      size: productSrc.dataset.size,
-      price: productSrc.dataset.price,
-      stock: Number(productSrc.dataset.stock || 1),
-      count: Number(productSrc.dataset.count || 1),
-    };
+    if (inCart) {
+      this.moveProductCount(inCart, product.count || 1);
+    } else {
+      this.setProduct(product);
+    }
   }
 
+  // cart actions
   empty = () => {
     this.cart = [];
   }
 
   refresh = () => {
-    this.cart = this.cart;
+    this.cart = this.cart
+      .map((item) => this.validProduct(item))
+      .filter((item) => item.count > 0);
   }
 
   #updateOutput = () => {
@@ -150,27 +219,34 @@ class ShopKeep extends HTMLElement {
     this.#output.value = this.count;
   }
 
+  // commands
   #commands = (event) => {
-    const srcProduct = this.productFrom(event.source);
-
     switch (event.command) {
       case '--refresh':
         this.refresh();
         break;
+
       case '--empty':
         this.empty();
         break;
-      case '--add-product':
-        if (!srcProduct) console.warn('Product is not defined');
-        const inCart = this.findProduct(srcProduct.id);
-        if (inCart) inCart.count += srcProduct.count;
-        this.setProduct(inCart || srcProduct);
+
+      case '--add-product': {
+        const product = this.srcProduct(event.source);
+        this.createOrAddProduct(product);
         break;
-      case '--remove-product':
-        this.removeProduct(srcProduct.id);
+      }
+
+      case '--reduce-product': {
+        const product = this.srcProduct(event.source);
+        this.reduceProduct(product.id, product.count);
         break;
-      default:
+      }
+
+      case '--remove-product': {
+        const id = this.srcProductID(event.source);
+        this.removeProduct(id);
         break;
+      }
     }
   }
 }
